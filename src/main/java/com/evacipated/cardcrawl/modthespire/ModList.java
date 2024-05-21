@@ -26,7 +26,7 @@ public class ModList
     private static String OLD_CFG_FILE = ConfigUtils.CONFIG_DIR + File.separator + "mod_order.xml";
     private static String CFG_FILE = ConfigUtils.CONFIG_DIR + File.separator + "mod_lists.json";
 
-    public static String DEFAULT_LIST = "<Default>";
+    public static final String DEFAULT_LIST = "<Default>";
 
     private static ModListSaveData saveData = null;
 
@@ -57,6 +57,12 @@ public class ModList
             return DEFAULT_LIST;
         }
         return saveData.defaultList;
+    }
+
+    public static void setDefaultList(String list)
+    {
+        saveData.defaultList = list;
+        save();
     }
 
     public static Collection<String> getAllModListNames()
@@ -221,6 +227,16 @@ public class ModList
     {
         saveData.defaultList = DEFAULT_LIST;
         saveData.lists.remove(list);
+        save();
+    }
+
+    public static void rename(String list, String newName)
+    {
+        List<String> mods = saveData.lists.remove(list);
+        if (mods != null) {
+            saveData.lists.put(newName, mods);
+            saveData.defaultList = newName;
+        }
         save();
     }
 }

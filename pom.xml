@@ -13,6 +13,8 @@
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.buildTime>${maven.build.timestamp}</project.buildTime>
+        <maven.build.timestamp.format>MMM dd yyyy HH:mm:ss</maven.build.timestamp.format>
 
         <kotlin.version>1.4.10</kotlin.version>
         <gdx.version>1.9.5</gdx.version>
@@ -20,6 +22,30 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>de.icongmbh.oss.maven.plugins</groupId>
+            <artifactId>javassist-maven-plugin</artifactId>
+            <version>2.0.2</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.formdev</groupId>
+            <artifactId>flatlaf</artifactId>
+            <version>3.3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.alexandriasoftware.swing</groupId>
+            <artifactId>jsplitbutton</artifactId>
+            <version>1.3.1</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.ea.agentloader</groupId>
+            <artifactId>ea-agent-loader</artifactId>
+            <version>1.0.3</version>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
@@ -210,10 +236,65 @@
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>mtsAbout.html</exclude>
+                </excludes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
                 <filtering>true</filtering>
+                <includes>
+                    <include>mtsAbout.html</include>
+                </includes>
             </resource>
         </resources>
         <plugins>
+            <plugin>
+                <groupId>de.icongmbh.oss.maven.plugins</groupId>
+                <artifactId>javassist-maven-plugin</artifactId>
+                <version>2.0.2</version>
+                <configuration>
+                    <includeTestClasses>false</includeTestClasses>
+                    <transformerClasses>
+                        <transformerClass>
+                            <className>com.evacipated.cardcrawl.modthespire.agent.DeprecateLoaderPlugin</className>
+                            <properties>
+                                <property>
+                                    <name>classpaths</name>
+                                    <value>
+                                        ${basedir}/../lib/ModTheSpire.jar
+                                        ${basedir}/../lib/BaseMod.jar
+                                        ${basedir}/../lib/StSLib.jar
+                                        ${basedir}/../lib/desktop-1.0.jar
+                                    </value>
+                                </property>
+                            </properties>
+                        </transformerClass>
+                    </transformerClasses>
+                </configuration>
+                <executions>
+                    <execution>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>javassist</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <addDefaultEntries>false</addDefaultEntries>
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                        </manifest>
+                    </archive>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
@@ -351,7 +432,14 @@
                             <transformers>
                                 <transformer
                                         implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.evacipated.cardcrawl.modthespire.Loader</mainClass>
+                                    <mainClass>com.evacipated.cardcrawl.modthespire.ModTheSpire</mainClass>
+                                    <manifestEntries>
+                                        <Premain-Class>com.evacipated.cardcrawl.modthespire.agent.MTSAgent</Premain-Class>
+                                        <Agent-Class>com.evacipated.cardcrawl.modthespire.agent.MTSAgent</Agent-Class>
+                                        <Can-Retransform-Classes>true</Can-Retransform-Classes>
+                                        <SplashScreen-Image>assets/splash.gif</SplashScreen-Image>
+                                        <Build-Time>${maven.build.timestamp}</Build-Time>
+                                    </manifestEntries>
                                 </transformer>
                                 <transformer
                                     implementation="org.apache.maven.plugins.shade.resource.IncludeResourceTransformer">
@@ -379,6 +467,7 @@
                                     <artifact>com.evacipated.cardcrawl:ModTheSpire</artifact>
                                     <excludes>
                                         <exclude>com/evacipated/cardcrawl/modthespire/patches/**</exclude>
+                                        <exclude>com/evacipated/cardcrawl/modthespire/agent/DeprecateLoaderPlugin.class</exclude>
                                     </excludes>
                                 </filter>
                                 <filter>
@@ -386,6 +475,18 @@
                                     <excludes>
                                         <exclude>**</exclude>
                                     </excludes>
+                                </filter>
+                                <filter>
+                                    <artifact>com.formdev:flatlaf</artifact>
+                                    <includes>
+                                        <include>**</include>
+                                    </includes>
+                                </filter>
+                                <filter>
+                                    <artifact>com.ea.agentloader:ea-agent-loader</artifact>
+                                    <includes>
+                                        <include>**</include>
+                                    </includes>
                                 </filter>
                                 <filter>
                                     <artifact>org.javassist:javassist</artifact>

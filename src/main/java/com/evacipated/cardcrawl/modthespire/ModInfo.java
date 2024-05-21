@@ -1,5 +1,6 @@
 package com.evacipated.cardcrawl.modthespire;
 
+import com.evacipated.cardcrawl.modthespire.steam.SteamSearch;
 import com.google.gson.*;
 import com.google.gson.annotations.SerializedName;
 import com.vdurmont.semver4j.Semver;
@@ -11,8 +12,11 @@ import java.lang.reflect.Type;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Objects;
 import java.util.Properties;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class ModInfo implements Serializable
 {
@@ -20,9 +24,17 @@ public class ModInfo implements Serializable
      * 
      */
     private static final long serialVersionUID = 7452562412479584982L;
+    private static final Gson gson = new GsonBuilder()
+        .excludeFieldsWithModifiers(Modifier.STATIC, Modifier.TRANSIENT)
+        .registerTypeAdapter(Dependency.class, new DependencyDeserializer())
+        .registerTypeAdapter(Semver.class, new VersionDeserializer())
+        .setDateFormat("MM-dd-yyyy")
+        .create();
+
     public transient URL jarURL;
     public transient String statusMsg = " ";
     public transient boolean isWorkshop = false;
+    public transient SteamSearch.WorkshopInfo workshopInfo;
     @SerializedName("modid")
     public String ID;
     @SerializedName("name")
@@ -40,7 +52,7 @@ public class ModInfo implements Serializable
     @SerializedName("sts_version")
     public String STS_Version;
     @SerializedName("dependencies")
-    public String[] Dependencies;
+    public Dependency[] Dependencies;
     @SerializedName("optional_dependencies")
     public String[] OptionalDependencies;
     @SerializedName("update_json")
@@ -53,7 +65,7 @@ public class ModInfo implements Serializable
         Description = "";
         MTS_Version = ModInfo.safeVersion("0.0.0");
         STS_Version = null;
-        Dependencies = new String[]{};
+        Dependencies = new Dependency[]{};
         OptionalDependencies = new String[]{};
         UpdateJSON = null;
     }
@@ -63,6 +75,27 @@ public class ModInfo implements Serializable
             return Name;
         } else {
             return ID;
+        }
+    }
+
+    public String getDependenciesRepr(boolean friendly)
+    {
+        if (Dependencies.length == 0) {
+            return " ";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        int iMax = Dependencies.length - 1;
+        for (int i=0; ; ++i) {
+            if (friendly) {
+                sb.append(Dependencies[i].name());
+            } else {
+                sb.append(Dependencies[i].toString());
+            }
+            if (i == iMax) {
+                return sb.toString();
+            }
+            sb.append(", ");
         }
     }
     
@@ -79,12 +112,6 @@ public class ModInfo implements Serializable
 
     public static ModInfo ReadModInfo(File mod_jar)
     {
-        Gson gson = new GsonBuilder()
-            .excludeFieldsWithModifiers(Modifier.STATIC, Modifier.TRANSIENT)
-            .registerTypeAdapter(Semver.class, new VersionDeserializer())
-            .setDateFormat("MM-dd-yyyy")
-            .create();
-
         URLClassLoader loader = null;
         try {
             loader = new URLClassLoader(new URL[] {mod_jar.toURI().toURL()}, null);
@@ -145,6 +172,16 @@ public class ModInfo implements Serializable
         return info;
     }
 
+    static class DependencyDeserializer implements JsonDeserializer<Dependency>
+    {
+        @Override
+        public Dependency deserialize(JsonElement jsonElement, Type type, JsonDeserializationContext jsonDeserializationContext) throws JsonParseException
+        {
+            String str = jsonElement.getAsString();
+            return Dependency.parse(str);
+        }
+    }
+
     static class VersionDeserializer implements JsonDeserializer<Semver>
     {
         @Override
@@ -195,6 +232,7 @@ public class ModInfo implements Serializable
         out.writeObject(Dependencies);
         out.writeObject(OptionalDependencies);
         out.writeObject(UpdateJSON);
+        out.writeObject(statusMsg);
     }
 
     private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException
@@ -207,13 +245,159 @@ public class ModInfo implements Serializable
         Description = (String) in.readObject();
         MTS_Version = safeVersion((String) in.readObject());
         STS_Version = (String) in.readObject();
-        Dependencies = (String[]) in.readObject();
+        Dependencies = (Dependency[]) in.readObject();
         OptionalDependencies = (String[]) in.readObject();
         UpdateJSON = (String) in.readObject();
+        statusMsg = (String) in.readObject();
     }
 
     public static Semver safeVersion(String verString)
     {
         return new Semver(verString, Semver.SemverType.NPM);
+    }
+
+    public static class Dependency implements Serializable
+    {
+        public String id;
+        private Semver version;
+        private Comparison comparison;
+
+        public boolean compare(ModInfo modInfo)
+        {
+            if (!Objects.equals(id, modInfo.ID)) {
+                return false;
+            }
+            if (version != null && comparison != null) {
+                int result = modInfo.ModVersion.compareTo(version);
+                return comparison.isCompareTo(result);
+            }
+            return true;
+        }
+
+        private static final Pattern p = Pattern.compile("^(?<id>[^=<>]+)(?:(?<cmp>==|>=|>|<=|<)(?<version>.+))?$");
+        static Dependency parse(String toParse)
+        {
+            Dependency ret = new Dependency();
+            ret.parseImpl(toParse);
+            return ret;
+        }
+
+        private void parseImpl(String toParse)
+        {
+            Matcher m = p.matcher(toParse);
+            if (!m.matches()) {
+                throw new IllegalArgumentException(toParse);
+            }
+            id = m.group("id");
+            comparison = Comparison.parse(m.group("cmp"));
+            String versionStr = m.group("version");
+            if (versionStr != null) {
+                version = safeVersion(versionStr);
+            }
+        }
+
+        @Override
+        public String toString()
+        {
+            if (id == null) {
+                throw new IllegalStateException("Dependency id should not be null");
+            }
+
+            StringBuilder sb = new StringBuilder(id);
+            if (version != null && comparison != null) {
+                sb.append(comparison.repr()).append(version);
+            }
+            return sb.toString();
+        }
+
+        public String name()
+        {
+            if (id == null) {
+                throw new IllegalStateException("Dependency id should not be null");
+            }
+
+            String name = Arrays.stream(ModTheSpire.ALLMODINFOS)
+                .filter(x -> Objects.equals(x.ID, id))
+                .map(x -> x.Name)
+                .findFirst()
+                .orElse(id);
+            StringBuilder sb = new StringBuilder(name);
+            if (version != null && comparison != null) {
+                sb.append(comparison.repr()).append(version);
+            }
+            return sb.toString();
+        }
+
+        private void writeObject(java.io.ObjectOutputStream out) throws IOException
+        {
+            out.writeObject(toString());
+        }
+
+        private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException
+        {
+            parseImpl((String) in.readObject());
+        }
+
+        private enum Comparison
+        {
+            EQUALS, GREATER_THAN, GREATER_OR_EQUALS, LESS_THAN, LESS_OR_EQUALS;
+
+            boolean isCompareTo(int compareTo)
+            {
+                switch (this) {
+                    case EQUALS:
+                        return compareTo == 0;
+                    case GREATER_THAN:
+                        return compareTo > 0;
+                    case GREATER_OR_EQUALS:
+                        return compareTo >= 0;
+                    case LESS_THAN:
+                        return compareTo < 0;
+                    case LESS_OR_EQUALS:
+                        return compareTo <= 0;
+                    default:
+                        return false;
+                }
+            }
+
+            String repr()
+            {
+                switch (this) {
+                    case EQUALS:
+                        return "==";
+                    case GREATER_THAN:
+                        return ">";
+                    case GREATER_OR_EQUALS:
+                        return ">=";
+                    case LESS_THAN:
+                        return "<";
+                    case LESS_OR_EQUALS:
+                        return "<=";
+                    default:
+                        return null;
+                }
+            }
+
+            static Comparison parse(String repr)
+            {
+                if (repr == null) {
+                    return null;
+                }
+                switch (repr) {
+                    case "==":
+                        return EQUALS;
+                    case ">":
+                        return GREATER_THAN;
+                    case ">=":
+                        return GREATER_OR_EQUALS;
+                    case "<":
+                        return LESS_THAN;
+                    case "<=":
+                        return LESS_OR_EQUALS;
+                    default:
+                        return null;
+                }
+            }
+        }
     }
 }

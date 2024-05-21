@@ -1,6 +1,6 @@
 package com.evacipated.cardcrawl.modthespire.steam;
 
-import com.evacipated.cardcrawl.modthespire.Loader;
+import com.evacipated.cardcrawl.modthespire.ModTheSpire;
 import org.apache.commons.lang3.SystemUtils;
 
 import java.io.BufferedReader;
@@ -26,7 +26,7 @@ public class SteamSearch
 
     public static String findJRE51()
     {
-        return findJRE(Loader.JRE_51_DIR);
+        return findJRE(ModTheSpire.JRE_51_DIR);
     }
 
     public static String findJRE(String jreBase)
@@ -64,7 +64,7 @@ public class SteamSearch
             return null;
         }
 
-        return Paths.get(installDir, Loader.STS_JAR).toString();
+        return Paths.get(installDir, ModTheSpire.STS_JAR).toString();
     }
 
     private static void prepare()
@@ -209,22 +209,17 @@ public class SteamSearch
     public static class WorkshopInfo
     {
         private final String title;
-        private final String id;
+        private final long id;
         private final String installPath;
         private final int timeUpdated;
         private List<String> tags;
 
-        public WorkshopInfo(String title, String id, String installPath, String timeUpdated, String tagsString)
+        public WorkshopInfo(String title, String id, String installPath, int timeUpdated, String tagsString)
         {
             this.title = title;
-            this.id = id;
+            this.id = Long.parseLong(id, 16);
             this.installPath = Paths.get(installPath).toAbsolutePath().toString();
-            int tmpTime = 0;
-            try {
-                tmpTime = Integer.parseInt(timeUpdated);
-            } catch (NumberFormatException ignore) {
-            }
-            this.timeUpdated = tmpTime;
+            this.timeUpdated = timeUpdated;
             String[] tmp = tagsString.split(",");
             tags = new ArrayList<>();
             for (String s : tmp) {
@@ -232,12 +227,27 @@ public class SteamSearch
             }
         }
 
+        public WorkshopInfo(String title, String id, String installPath, String timeUpdated, String tagsString)
+        {
+            this(title, id, installPath, atoi(timeUpdated), tagsString);
+        }
+
+        private static int atoi(String str)
+        {
+            int tmp = 0;
+            try {
+                tmp = Integer.parseInt(str);
+            } catch (NumberFormatException ignore) {
+            }
+            return tmp;
+        }
+
         public String getTitle()
         {
             return title;
         }
 
-        public String getID()
+        public long getID()
         {
             return id;
         }

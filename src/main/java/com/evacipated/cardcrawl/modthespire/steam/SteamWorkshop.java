@@ -1,17 +1,19 @@
 package com.evacipated.cardcrawl.modthespire.steam;
 
 import com.codedisaster.steamworks.*;
+import com.google.gson.Gson;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Scanner;
 
 public class SteamWorkshop
 {
     private static final int appId = 646570;
 
     private static SteamUGC workshop;
-
-    private static boolean kill = false;
+    private static SteamData data;
 
     public static void main(String[] args)
     {
@@ -30,18 +32,22 @@ public class SteamWorkshop
             System.exit(2);
         }
 
+        data = new SteamData();
+
         if (SteamAPI.isSteamRunning(true)) {
+            Runtime.getRuntime().addShutdownHook(new Thread(SteamAPI::shutdown));
+
+            SteamFriends friends = new SteamFriends(new FriendsCallback());
+            friends.setRichPresence("status", "ModTheSpire");
+            friends.setRichPresence("steam_display", "#Status");
+            friends.dispose();
+
             try {
                 SteamUtils utils = new SteamUtils(() -> {});
-                boolean onDeck = utils.isSteamRunningOnSteamDeck();
-                System.err.println("deck: " + onDeck);
-                System.out.println(onDeck);
-            } catch (NoSuchMethodError | IllegalAccessError ignored) {
-                System.err.println("deck: " + false);
-                System.out.println(false);
-            }
+                data.steamDeck = utils.isSteamRunningOnSteamDeck();
+            } catch (NoSuchMethodError | IllegalAccessError ignored) {}
 
-            workshop = new SteamUGC(new Callback());
+            workshop = new SteamUGC(new UGCCallback());
             int items = workshop.getNumSubscribedItems();
 
             SteamPublishedFileID[] publishedFileIDS = new SteamPublishedFileID[items];
@@ -52,6 +58,9 @@ public class SteamWorkshop
             SteamUGCQuery query = workshop.createQueryUGCDetailsRequest(Arrays.asList(publishedFileIDS));
             workshop.sendQueryUGCRequest(query);
 
+            Scanner scanner = new Scanner(System.in).useDelimiter("\0");
+
+            loop:
             while (SteamAPI.isSteamRunning()) {
                 try {
                     Thread.sleep(66L);
@@ -60,16 +69,22 @@ public class SteamWorkshop
                 }
                 SteamAPI.runCallbacks();
 
-                if (kill) {
-                    break;
-                }
+                try {
+                    if (System.in.available() > 0) {
+                        String command = scanner.next();
+                        switch (command) {
+                            case "quit":
+                                break loop;
+                        }
+                    }
+                } catch (IOException ignored) {}
             }
         }
 
         SteamAPI.shutdown();
     }
 
-    private static class Callback implements SteamUGCCallback {
+    private static class UGCCallback implements SteamUGCCallback {
 
         int resultsReceived = 0;
 
@@ -88,11 +103,14 @@ public class SteamWorkshop
                         if (state.contains(SteamUGC.ItemState.Installed)) {
                             SteamUGC.ItemInstallInfo info = new SteamUGC.ItemInstallInfo();
                             if (workshop.getItemInstallInfo(details.getPublishedFileID(), info)) {
-                                System.out.println(details.getTitle());
-                                System.out.println(details.getPublishedFileID());
-                                System.out.println(info.getFolder());
-                                System.out.println(details.getTimeUpdated());
-                                System.out.println(details.getTags());
+                                SteamSearch.WorkshopInfo workshopInfo = new SteamSearch.WorkshopInfo(
+                                    details.getTitle(),
+                                    details.getPublishedFileID().toString(),
+                                    info.getFolder(),
+                                    details.getTimeUpdated(),
+                                    details.getTags()
+                                );
+                                data.workshopInfos.add(workshopInfo);
                             }
                         }
                     } else {
@@ -107,8 +125,12 @@ public class SteamWorkshop
 
             resultsReceived += numResultsReturned;
             if (resultsReceived >= totalMatchingResults) {
-                kill = true;
+                Gson gson = new Gson();
+                String json = gson.toJson(data);
+                System.out.println(json);
+                System.out.println('\0');
             }
+            workshop.releaseQueryUserUGCRequest(query);
         }
 
         @Override
@@ -174,6 +196,56 @@ public class SteamWorkshop
 
         @Override
         public void onDeleteItem(SteamPublishedFileID publishedFileID, SteamResult result)
+        {
+
+        }
+    }
+
+    private static class FriendsCallback implements SteamFriendsCallback {
+        @Override
+        public void onSetPersonaNameResponse(boolean success, boolean localSuccess, SteamResult result)
+        {
+
+        }
+
+        @Override
+        public void onPersonaStateChange(SteamID steamID, SteamFriends.PersonaChange change)
+        {
+
+        }
+
+        @Override
+        public void onGameOverlayActivated(boolean active)
+        {
+
+        }
+
+        @Override
+        public void onGameLobbyJoinRequested(SteamID steamIDLobby, SteamID steamIDFriend)
+        {
+
+        }
+
+        @Override
+        public void onAvatarImageLoaded(SteamID steamID, int image, int width, int height)
+        {
+
+        }
+
+        @Override
+        public void onFriendRichPresenceUpdate(SteamID steamIDFriend, int appID)
+        {
+
+        }
+
+        @Override
+        public void onGameRichPresenceJoinRequested(SteamID steamIDFriend, String connect)
+        {
+
+        }
+
+        @Override
+        public void onGameServerChangeRequested(String server, String password)
         {
 
         }

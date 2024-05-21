@@ -1,9 +1,17 @@
 package com.evacipated.cardcrawl.modthespire.ui;
 
+import com.alexandriasoftware.swing.JSplitButton;
 import com.evacipated.cardcrawl.modthespire.*;
-import com.evacipated.cardcrawl.modthespire.steam.SteamSearch;
+import com.evacipated.cardcrawl.modthespire.lib.ConfigUtils;
+import com.formdev.flatlaf.FlatClientProperties;
+import com.formdev.flatlaf.FlatDarkLaf;
+import com.formdev.flatlaf.FlatLaf;
+import com.formdev.flatlaf.FlatLightLaf;
+import com.formdev.flatlaf.icons.FlatSearchIcon;
+import ru.krlvm.swingdpi.SwingDPI;
 
 import javax.swing.*;
+import javax.swing.border.Border;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.MatteBorder;
 import javax.swing.border.TitledBorder;
@@ -15,10 +23,10 @@ import java.io.File;
 import java.io.IOException;
 import java.net.URISyntaxException;
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.Arrays;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
-import java.util.Properties;
+import java.util.*;
 
 public class ModSelectWindow extends JFrame
 {
@@ -28,30 +36,36 @@ public class ModSelectWindow extends JFrame
     private static final long serialVersionUID = -8232997068791248057L;
     private static final int DEFAULT_WIDTH = 800;
     private static final int DEFAULT_HEIGHT = 500;
-    private static final String DEBUG_OPTION = "Debug";
     private static final String PLAY_OPTION = "Play";
     private static final String JAR_DUMP_OPTION = "Dump Patched Jar";
-    private static final String PACKAGE_OPTION = "Package";
+    private static final String PACKAGE_OPTION = "Create Prepackaged Jar";
 
     static final Image APP_ICON = Toolkit.getDefaultToolkit().createImage(ModSelectWindow.class.getResource("/assets/icon.png"));
+    static final Icon ICON_SETTINGS = new ImageIcon(ModSelectWindow.class.getResource("/assets/settings.gif"));
     static final Icon ICON_UPDATE   = new ImageIcon(ModSelectWindow.class.getResource("/assets/update.gif"));
+    static final Icon ICON_FOLDER   = new ImageIcon(ModSelectWindow.class.getResource("/assets/folder.gif"));
+    static final Icon ICON_FILE     = new ImageIcon(ModSelectWindow.class.getResource("/assets/file.gif"));
     static final Icon ICON_LOAD     = new ImageIcon(ModSelectWindow.class.getResource("/assets/ajax-loader.gif"));
     static final Icon ICON_GOOD     = new ImageIcon(ModSelectWindow.class.getResource("/assets/good.gif"));
     static final Icon ICON_WARNING  = new ImageIcon(ModSelectWindow.class.getResource("/assets/warning.gif"));
     static final Icon ICON_ERROR    = new ImageIcon(ModSelectWindow.class.getResource("/assets/error.gif"));
     static final Icon ICON_WORKSHOP = new ImageIcon(ModSelectWindow.class.getResource("/assets/workshop.gif"));
+    static final Icon ICON_WORKSHOP_HOVER = new ImageIcon(ModSelectWindow.class.getResource("/assets/workshop_hover.gif"));
 
     private ModInfo[] info;
     private boolean showingLog = false;
     private boolean isMaximized = false;
     private boolean isCentered = false;
     private Rectangle location;
-    private JButton playBtn;
+    private JSplitButton playBtn;
+    private JPopupMenu playBtnPopup;
 
     private JModPanelCheckBoxList modList;
+    private JComboBox<String> profilesList;
 
     private ModInfo currentModInfo;
     private TitledBorder name;
+    private JLabel modID;
     private JTextArea authors;
     private JLabel modVersion;
     private JTextArea status;
@@ -59,6 +73,7 @@ public class ModSelectWindow extends JFrame
     private JLabel stsVersion;
     private JTextArea description;
     private JTextArea credits;
+    private JLabel dependencies;
 
     private JPanel bannerNoticePanel;
     private JLabel mtsUpdateBanner;
@@ -68,6 +83,10 @@ public class ModSelectWindow extends JFrame
     private JLabel modUpdateBanner;
 
     static List<ModUpdate> MODUPDATES;
+
+    static float UI_SCALE = 1f;
+    static boolean MODDER_MODE = false;
+    public static String stsDistributor = null;
 
     public enum UpdateIconType
     {
@@ -87,11 +106,15 @@ public class ModSelectWindow extends JFrame
     
     public ModSelectWindow(ModInfo[] modInfos, boolean skipLauncher)
     {
-        try {
-            UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-        } catch (ClassNotFoundException | InstantiationException | UnsupportedLookAndFeelException | IllegalAccessException e) {
-            e.printStackTrace();
+        FlatLaf.registerCustomDefaultsSource("mtsThemes");
+        rootPane.putClientProperty("JRootPane.titleBarShowTitle", false);
+        setTheme(ModTheSpire.MTS_CONFIG.getString("uiTheme", "Light"));
+        UI_SCALE = ModTheSpire.MTS_CONFIG.getFloat("uiScale", 1f);
+        if (UI_SCALE != 1f) {
+            SwingDPI.setScaleFactor(UI_SCALE);
+            SwingDPI.setScaleApplied(true);
         }
+        MODDER_MODE = ModTheSpire.MTS_CONFIG.getBool("modder", false);
 
         setIconImage(APP_ICON);
 
@@ -99,39 +122,60 @@ public class ModSelectWindow extends JFrame
         readWindowPosSize();
         setupDetectMaximize();
         initUI(skipLauncher);
-        if (Loader.MTS_CONFIG.getBool("maximize")) {
+        if (ModTheSpire.MTS_CONFIG.getBool("maximize")) {
             isMaximized = true;
             this.setExtendedState(this.getExtendedState() | JFrame.MAXIMIZED_BOTH);
+        }
+    }
+
+    static void setTheme(String theme)
+    {
+        LookAndFeel laf;
+        switch (theme) {
+            case "Light":
+                laf = new FlatLightLaf();
+                break;
+            case "Dark":
+                laf = new FlatDarkLaf();
+                break;
+            default:
+                laf = null;
+                break;
+        }
+        if (laf != null) {
+            if (FlatLaf.setup(laf)) {
+                FlatLaf.updateUI();
+            }
         }
     }
 
     private void readWindowPosSize()
     {
         // Sanity check values
-        if (Loader.MTS_CONFIG.getInt("width") < DEFAULT_WIDTH) {
-            Loader.MTS_CONFIG.setInt("width", DEFAULT_WIDTH);
+        if (ModTheSpire.MTS_CONFIG.getInt("width") < DEFAULT_WIDTH) {
+            ModTheSpire.MTS_CONFIG.setInt("width", DEFAULT_WIDTH);
         }
-        if (Loader.MTS_CONFIG.getInt("height") < DEFAULT_HEIGHT) {
-            Loader.MTS_CONFIG.setInt("height", DEFAULT_HEIGHT);
+        if (ModTheSpire.MTS_CONFIG.getInt("height") < DEFAULT_HEIGHT) {
+            ModTheSpire.MTS_CONFIG.setInt("height", DEFAULT_HEIGHT);
         }
         location = new Rectangle();
-        location.width = Loader.MTS_CONFIG.getInt("width");
-        location.height = Loader.MTS_CONFIG.getInt("height");
-        if (Loader.MTS_CONFIG.getString("x").equals("center") || Loader.MTS_CONFIG.getString("y").equals("center")) {
+        location.width = ModTheSpire.MTS_CONFIG.getInt("width");
+        location.height = ModTheSpire.MTS_CONFIG.getInt("height");
+        if (ModTheSpire.MTS_CONFIG.getString("x").equals("center") || ModTheSpire.MTS_CONFIG.getString("y").equals("center")) {
             isCentered = true;
         } else {
             isCentered = false;
-            location.x = Loader.MTS_CONFIG.getInt("x");
-            location.y = Loader.MTS_CONFIG.getInt("y");
+            location.x = ModTheSpire.MTS_CONFIG.getInt("x");
+            location.y = ModTheSpire.MTS_CONFIG.getInt("y");
             if (!isInScreenBounds(location)) {
-                Loader.MTS_CONFIG.setString("x", "center");
-                Loader.MTS_CONFIG.setString("y", "center");
+                ModTheSpire.MTS_CONFIG.setString("x", "center");
+                ModTheSpire.MTS_CONFIG.setString("y", "center");
                 isCentered = true;
             }
         }
 
         try {
-            Loader.MTS_CONFIG.save();
+            ModTheSpire.MTS_CONFIG.save();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -194,17 +238,17 @@ public class ModSelectWindow extends JFrame
 
     private void initUI(boolean skipLauncher)
     {
-        setTitle("ModTheSpire " + Loader.MTS_VERSION);
+        setTitle("ModTheSpire");
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setResizable(true);
+        setJMenuBar(makeMenuBar());
 
         rootPane.setBorder(new EmptyBorder(5, 5, 5, 5));
 
         setLayout(new BorderLayout());
         getContentPane().setPreferredSize(new Dimension(location.width, location.height));
 
-        getContentPane().add(makeModListPanel(), BorderLayout.WEST);
-        getContentPane().add(makeInfoPanel(), BorderLayout.CENTER);
+        getContentPane().add(makeSplitPanel(), BorderLayout.CENTER);
         getContentPane().add(makeTopPanel(), BorderLayout.NORTH);
 
         pack();
@@ -224,11 +268,194 @@ public class ModSelectWindow extends JFrame
         }
     }
 
+    private JMenuBar makeMenuBar()
+    {
+        JMenuBar menuBar = new JMenuBar();
+        JMenu menu = new JMenu("ModTheSpire");
+        JMenuItem item;
+        menu.setMnemonic(KeyEvent.VK_M);
+
+        // Open Folder menu
+        JMenu openMenu = new JMenu("Open");
+        openMenu.setMnemonic(KeyEvent.VK_O);
+        item = new JMenuItem("Slay the Spire");
+        try {
+            String surl = new File(ModTheSpire.STS_JAR).toURI().toURL().toString();
+            URL url = new URL("jar:" + surl + "!/images/ui/icon.png");
+            ImageIcon icon = new ImageIcon(url);
+            icon.setImage(icon.getImage().getScaledInstance(16, 16, Image.SCALE_SMOOTH));
+            item.setIcon(icon);
+        } catch (Exception ignored) {}
+        item.setMnemonic(KeyEvent.VK_S);
+        item.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_1, KeyEvent.CTRL_MASK));
+        item.addActionListener((ActionEvent event) -> {
+            openFolder(Paths.get(ModTheSpire.STS_JAR).toFile().getParent(), false);
+        });
+        openMenu.add(item);
+        item = new JMenuItem("Workshop Mods", ICON_WORKSHOP);
+        item.setMnemonic(KeyEvent.VK_W);
+        item.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_2, KeyEvent.CTRL_MASK));
+        item.addActionListener((ActionEvent event) -> {
+            Optional<String> installPath = Arrays.stream(info)
+                .filter(x -> x.workshopInfo != null)
+                .map(x -> x.workshopInfo.getInstallPath())
+                .findFirst();
+            if (installPath.isPresent()) {
+                Path path = Paths.get(installPath.get());
+                openFolder(path.getParent().toString(), false);
+            }
+        });
+        item.setEnabled(Arrays.stream(info).anyMatch(x -> x.workshopInfo != null));
+        openMenu.add(item);
+        item = new JMenuItem("Local Mods", ICON_FOLDER);
+        item.setMnemonic(KeyEvent.VK_M);
+        item.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_3, KeyEvent.CTRL_MASK));
+        item.addActionListener((ActionEvent event) -> {
+            openFolder(ModTheSpire.MOD_DIR, true);
+        });
+        openMenu.add(item);
+        item = new JMenuItem("Config Files", ICON_SETTINGS);
+        item.setMnemonic(KeyEvent.VK_C);
+        item.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_4, KeyEvent.CTRL_MASK));
+        item.addActionListener((ActionEvent event) -> {
+            openFolder(ConfigUtils.CONFIG_DIR, false);
+        });
+        openMenu.add(item);
+        item = new JMenuItem("Log Files", ICON_FILE);
+        item.setMnemonic(KeyEvent.VK_L);
+        item.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_5, KeyEvent.CTRL_MASK));
+        item.addActionListener((ActionEvent event) -> {
+            openFolder("sendToDevs/", false);
+        });
+        openMenu.add(item);
+
+        // Check for Updates button
+        item = new JMenuItem("Check for Mod Updates", ICON_UPDATE);
+        final JMenuItem updateItem = item;
+        item.addActionListener(event -> {
+            startCheckingForModUpdates(updateItem);
+        });
+        // TODO rework updates and add menu item
+        //menu.add(item);
+
+        // Settings
+        item = new JMenuItem("Settings...");
+        item.setMnemonic(KeyEvent.VK_S);
+        item.addActionListener((ActionEvent event) -> {
+            JDialog settingsWindow = new SettingsWindow(ModSelectWindow.this);
+            settingsWindow.pack();
+            settingsWindow.setLocationRelativeTo(ModSelectWindow.this);
+            settingsWindow.setVisible(true);
+        });
+        menu.add(item);
+        menu.addSeparator();
+        // About
+        item = new JMenuItem("About");
+        item.setMnemonic(KeyEvent.VK_A);
+        item.addActionListener((ActionEvent event) -> {
+            JDialog aboutWindow = new AboutWindow(ModSelectWindow.this);
+            aboutWindow.pack();
+            aboutWindow.setLocationRelativeTo(ModSelectWindow.this);
+            aboutWindow.setVisible(true);
+        });
+        menu.add(item);
+        menuBar.add(menu);
+
+        // Edit menu
+        menu = new JMenu("Edit");
+        menu.setMnemonic(KeyEvent.VK_E);
+        // Mod List editor
+        item = new JMenuItem("Mod Lists...");
+        item.setMnemonic(KeyEvent.VK_L);
+        item.addActionListener(e -> {
+            JDialog modListEditor = new ModListEditorWindow(ModSelectWindow.this);
+            modListEditor.pack();
+            modListEditor.setLocationRelativeTo(ModSelectWindow.this);
+            modListEditor.setVisible(true);
+        });
+        menu.add(item);
+        menu.addSeparator();
+        // Enable all mods
+        item = new JMenuItem("Enable All Mods");
+        item.setMnemonic(KeyEvent.VK_E);
+        item.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_E, KeyEvent.CTRL_MASK));
+        item.addActionListener(e -> {
+            modList.enableAllMods(true);
+            modList.repaint();
+        });
+        menu.add(item);
+        // Disable all mods
+        item = new JMenuItem("Disable All Mods");
+        item.setMnemonic(KeyEvent.VK_D);
+        item.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_D, KeyEvent.CTRL_MASK));
+        item.addActionListener(e -> {
+            modList.enableAllMods(false);
+            modList.repaint();
+        });
+        menu.add(item);
+        menuBar.add(menu);
+
+        menuBar.add(openMenu);
+
+        return menuBar;
+    }
+    private static void openFolder(String path, boolean createIfNotExist)
+    {
+        try {
+            File file = new File(path);
+            if (!file.exists()) {
+                if (createIfNotExist) {
+                    file.mkdir();
+                } else {
+                    return;
+                }
+            }
+            Desktop.getDesktop().open(file);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private JSplitPane makeSplitPanel()
+    {
+        JSplitPane split = new JSplitPane(
+            JSplitPane.HORIZONTAL_SPLIT,
+            true,
+            makeModListPanel(),
+            makeInfoPanel()
+        );
+        // Load divider location
+        EventQueue.invokeLater(() -> {
+            if (ModTheSpire.MTS_CONFIG.has("split")) {
+                float splitLocation = ModTheSpire.MTS_CONFIG.getFloat("split");
+                split.setDividerLocation(splitLocation);
+            }
+        });
+        // Save divider location when it changes
+        split.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, evt -> {
+            if (((Integer) evt.getOldValue()) == -1) {
+                return;
+            }
+
+            Integer v = (Integer) evt.getNewValue();
+            float percent = v / (float) (split.getWidth() - split.getDividerSize());
+            ModTheSpire.MTS_CONFIG.setFloat("split", percent);
+            try {
+                ModTheSpire.MTS_CONFIG.save();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        });
+
+        return split;
+    }
+
     private JPanel makeModListPanel()
     {
         JPanel panel = new JPanel();
         panel.setLayout(new BorderLayout());
         panel.setPreferredSize(new Dimension(220, 300));
+        panel.setMinimumSize(new Dimension(180, 300));
 
         // Mod List
         DefaultListModel<ModPanel> model = new DefaultListModel<>();
@@ -241,20 +468,86 @@ public class ModSelectWindow extends JFrame
         panel.add(modScroller, BorderLayout.CENTER);
 
         // Play button
-        playBtn = new JButton(
-            Loader.PACKAGE ? PACKAGE_OPTION :
-                Loader.OUT_JAR ? JAR_DUMP_OPTION :
-                PLAY_OPTION
-        );
-        playBtn.addActionListener((ActionEvent event) -> {
+        playBtn = new JSplitButton() {
+            @Override
+            public void updateUI()
+            {
+                super.updateUI();
+
+                setArrowColor(UIManager.getColor("ComboBox.buttonArrowColor"));
+                setDisabledArrowColor(UIManager.getColor("ComboBox.buttonDisabledArrowColor"));
+
+                JPopupMenu popupMenu = getPopupMenu();
+                if (popupMenu != null) {
+                    popupMenu.updateUI();
+                    for (Component component : popupMenu.getComponents()) {
+                        if (component instanceof JComponent) {
+                            ((JComponent) component).updateUI();
+                        }
+                    }
+                }
+            }
+        };
+        playBtn.setMnemonic(KeyEvent.VK_P);
+        playBtn.updateUI(); // forces arrow color update
+        setPlayButtonLabel();
+        playBtnPopup = new JPopupMenu();
+        {
+            ButtonGroup group = new ButtonGroup();
+            JMenuItem play = playBtnPopup.add(new JRadioButtonMenuItem(new AbstractAction(PLAY_OPTION)
+            {
+                @Override
+                public void actionPerformed(ActionEvent e)
+                {
+                    ModTheSpire.OUT_JAR = false;
+                    ModTheSpire.PACKAGE = false;
+                    setPlayButtonLabel();
+                }
+            }));
+            group.add(play);
+            JMenuItem outJar = playBtnPopup.add(new JRadioButtonMenuItem(new AbstractAction(JAR_DUMP_OPTION)
+            {
+                @Override
+                public void actionPerformed(ActionEvent e)
+                {
+                    ModTheSpire.OUT_JAR = true;
+                    ModTheSpire.PACKAGE = false;
+                    setPlayButtonLabel();
+                }
+            }));
+            group.add(outJar);
+            JMenuItem packageJar = playBtnPopup.add(new JRadioButtonMenuItem(new AbstractAction(PACKAGE_OPTION)
+            {
+                @Override
+                public void actionPerformed(ActionEvent e)
+                {
+                    ModTheSpire.OUT_JAR = false;
+                    ModTheSpire.PACKAGE = true;
+                    setPlayButtonLabel();
+                }
+            }));
+            group.add(packageJar);
+
+            if (ModTheSpire.PACKAGE) {
+                packageJar.setSelected(true);
+            } else if (ModTheSpire.OUT_JAR) {
+                outJar.setSelected(true);
+            } else {
+                play.setSelected(true);
+            }
+        }
+        setPlayButtonOptions(MODDER_MODE);
+        playBtn.addButtonClickedActionListener((ActionEvent e) -> {
             showingLog = true;
             playBtn.setEnabled(false);
 
+            rootPane.putClientProperty("JRootPane.titleBarShowTitle", true);
+            setJMenuBar(null);
             this.getContentPane().removeAll();
 
             JTextArea textArea = new JTextArea();
             textArea.setLineWrap(true);
-            textArea.setFont(new Font("monospaced", Font.PLAIN, 12));
+            textArea.setFont(new Font("monospaced", Font.PLAIN, SwingDPI.scale(12)));
             JScrollPane logScroller = new JScrollPane(textArea);
             this.getContentPane().add(logScroller, BorderLayout.CENTER);
             MessageConsole mc = new MessageConsole(textArea);
@@ -267,141 +560,55 @@ public class ModSelectWindow extends JFrame
                 setLocationRelativeTo(null);
             }
 
-            Thread tCfg = new Thread(() -> {
-                // Save new load order cfg
-                ModList.save(ModList.getDefaultList(), modList.getCheckedMods());
-            });
-            tCfg.start();
-
             Thread t = new Thread(() -> {
-                // Build array of selected mods
-                File[] selectedMods;
-                if (Loader.manualModIds != null) {
-                    selectedMods = modList.getAllMods();
-                } else {
-                    selectedMods = modList.getCheckedMods();
-                }
-
-                Loader.runMods(selectedMods);
-                if (Loader.CLOSE_WHEN_FINISHED) {
-                    Loader.closeWindow();
+                ModTheSpire.runMods(modList.getCheckedModIDs());
+                if (ModTheSpire.CLOSE_WHEN_FINISHED) {
+                    ModTheSpire.closeWindow();
                 }
             });
             t.start();
         });
-        if (Loader.STS_BETA && !Loader.allowBeta) {
+        if (ModTheSpire.STS_BETA && !ModTheSpire.allowBeta) {
             playBtn.setEnabled(false);
         }
         panel.add(playBtn, BorderLayout.SOUTH);
 
-        // Open mod directory
-        JButton openFolderBtn = new JButton(UIManager.getIcon("FileView.directoryIcon"));
-        openFolderBtn.setToolTipText("Open Mods Directory");
-        openFolderBtn.addActionListener((ActionEvent event) -> {
-            try {
-                File file = new File(Loader.MOD_DIR);
-                if (!file.exists()) {
-                    file.mkdir();
-                }
-                Desktop.getDesktop().open(file);
-            } catch (IOException e) {
-                e.printStackTrace();
+        profilesList = new JComboBox<>();
+        updateProfilesList();
+
+        JTextField filter = new JTextField();
+        filter.putClientProperty(FlatClientProperties.PLACEHOLDER_TEXT, "Search");
+        filter.putClientProperty(FlatClientProperties.TEXT_FIELD_LEADING_ICON, new FlatSearchIcon());
+        filter.putClientProperty(FlatClientProperties.TEXT_FIELD_SHOW_CLEAR_BUTTON, true);
+        // Focus filter text field  on Ctrl+F
+        rootPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(
+            KeyStroke.getKeyStroke(KeyEvent.VK_F, KeyEvent.CTRL_MASK),
+            "search"
+        );
+        rootPane.getActionMap().put("search", new AbstractAction()
+        {
+            @Override
+            public void actionPerformed(ActionEvent e)
+            {
+                filter.requestFocusInWindow();
             }
         });
-        // Check for Updates button
-        JButton updatesBtn = new JButton(ICON_UPDATE);
-        updatesBtn.setToolTipText("Check for Mod Updates");
-        updatesBtn.addActionListener(event -> {
-            startCheckingForModUpdates(updatesBtn);
-        });
-        // Settings button
-        JButton settingsBtn = new JButton("Settings");
-        settingsBtn.addActionListener((ActionEvent event) -> {
-            // TODO
-        });
-        // Toggle all button
-        JButton toggleAllBtn = new JButton(UIManager.getIcon("Tree.collapsedIcon"));
-        toggleAllBtn.setToolTipText("Toggle all mods On/Off");
-        toggleAllBtn.addActionListener((ActionEvent event) -> {
-            modList.toggleAllMods();
-            repaint();
-        });
-
-        JPanel btnPanel = new JPanel(new GridLayout(1, 0));
-        //btnPanel.add(settingsBtn);
-        btnPanel.add(updatesBtn);
-        btnPanel.add(openFolderBtn);
-
-        JComboBox<String> profilesList = new JComboBox<>(ModList.getAllModListNames().toArray(new String[0]));
-        JButton addProfile = new JButton("+");
-        JButton delProfile = new JButton("-");
-
-        TextFieldWithPlaceholder filter = new TextFieldWithPlaceholder();
-        filter.setPlaceholder("Filter...");
 
         profilesList.addActionListener((ActionEvent event) -> {
             String profileName = (String) profilesList.getSelectedItem();
-            delProfile.setEnabled(!ModList.DEFAULT_LIST.equals(profileName));
+            if (profileName == null) return;
             ModList newList = new ModList(profileName);
             DefaultListModel<ModPanel> newModel = (DefaultListModel<ModPanel>) modList.getModel();
             newList.loadModsInOrder(newModel, info, modList);
             filter.setText("");
 
-            Thread tCfg = new Thread(() -> {
-                // Save new load order cfg
-                ModList.save(profileName, modList.getCheckedMods());
-            });
-            tCfg.start();
+            ModList.setDefaultList(profileName);
         });
-        if (Loader.profileArg != null) {
-            profilesList.setSelectedItem(Loader.profileArg);
+        if (ModTheSpire.profileArg != null) {
+            profilesList.setSelectedItem(ModTheSpire.profileArg);
         } else {
             profilesList.setSelectedItem(ModList.getDefaultList());
         }
-
-        JPanel profilesPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints c = new GridBagConstraints();
-        c.fill = GridBagConstraints.BOTH;
-        c.ipady = 2;
-        profilesPanel.add(toggleAllBtn, c);
-        c.weightx = 0.9;
-        c.ipady = 0;
-        profilesPanel.add(profilesList, c);
-        c.weightx = 0;
-        c.ipady = 2;
-        // Add profile button
-        addProfile.setToolTipText("Add new profile");
-        addProfile.addActionListener((ActionEvent event) -> {
-            String s = JOptionPane.showInputDialog(
-                this,
-                "Profile Name:",
-                "New Profile",
-                JOptionPane.PLAIN_MESSAGE
-            );
-            if (s != null && !s.isEmpty()) {
-                profilesList.addItem(s);
-                profilesList.setSelectedIndex(profilesList.getItemCount() - 1);
-            }
-        });
-        profilesPanel.add(addProfile, c);
-        // Delete profile button
-        delProfile.setToolTipText("Delete profile");
-        delProfile.addActionListener((ActionEvent event) -> {
-            String profileName = (String) profilesList.getSelectedItem();
-
-            int n = JOptionPane.showConfirmDialog(
-                this,
-                "Are you sure?\nThis action cannot be undone.",
-                "Delete Profile \"" + profileName + "\"",
-                JOptionPane.YES_NO_OPTION
-            );
-            if (n == 0) {
-                profilesList.removeItem(profileName);
-                profilesList.setSelectedItem(ModList.DEFAULT_LIST);
-                ModList.delete(profileName);
-            }
-        });
-        profilesPanel.add(delProfile, c);
 
         Runnable filterModList = () -> {
             String filterText = filter.getText().trim().toLowerCase();
@@ -430,18 +637,81 @@ public class ModSelectWindow extends JFrame
         });
 
         JPanel topPanel = new JPanel(new GridLayout(0, 1));
-        topPanel.add(btnPanel);
-        topPanel.add(profilesPanel);
+        topPanel.add(profilesList);
         topPanel.add(filter);
         panel.add(topPanel, BorderLayout.NORTH);
 
         return panel;
     }
 
+    void saveCurrentModList()
+    {
+        Thread tCfg = new Thread(() -> {
+            // Save new load order cfg
+            ModList.save(ModList.getDefaultList(), modList.getCheckedMods());
+        });
+        tCfg.start();
+    }
+
+    void updateProfilesList()
+    {
+        updateProfilesList(null, null);
+    }
+
+    void updateProfilesList(String oldName, String newName)
+    {
+        String selected = (String) profilesList.getSelectedItem();
+        DefaultComboBoxModel<String> model = new DefaultComboBoxModel<>(ModList.getAllModListNames().toArray(new String[0]));
+        profilesList.setModel(model);
+
+        if (oldName != null && newName != null) {
+            if (oldName.equals(selected)) {
+                selected = newName;
+            }
+        }
+
+        if (model.getIndexOf(selected) == -1) {
+            selected = null;
+        }
+        if (selected != null) {
+            profilesList.setSelectedItem(selected);
+        } else {
+            profilesList.setSelectedIndex(0);
+        }
+    }
+
+    private void setPlayButtonLabel()
+    {
+        playBtn.setText(
+            ModTheSpire.PACKAGE ? PACKAGE_OPTION :
+                ModTheSpire.OUT_JAR ? JAR_DUMP_OPTION :
+                    PLAY_OPTION
+        );
+        playBtn.setDisplayedMnemonicIndex(playBtn.getText().indexOf('P'));
+    }
+
+    private void setPlayButtonOptions(boolean enabled)
+    {
+        if (enabled) {
+            playBtn.setPopupMenu(playBtnPopup);
+        } else {
+            playBtn.setPopupMenu(null);
+        }
+        playBtn.repaint();
+    }
+
+    void updateModderMode(boolean enabled)
+    {
+        setPlayButtonOptions(enabled);
+        modID.setVisible(enabled);
+        refreshDependenciesView(enabled);
+    }
+
     private JPanel makeInfoPanel()
     {
         JPanel panel = new JPanel();
         panel.setLayout(new BorderLayout());
+        panel.setMinimumSize(new Dimension(400, 300));
 
         // Top mod banner panel
         panel.add(makeModBannerPanel(), BorderLayout.NORTH);
@@ -452,7 +722,6 @@ public class ModSelectWindow extends JFrame
         // Main info panel
         JPanel infoPanel = new JPanel();
         name = BorderFactory.createTitledBorder("Mod Info");
-        name.setTitleFont(name.getTitleFont().deriveFont(Font.BOLD));
         infoPanel.setBorder(BorderFactory.createCompoundBorder(
             name,
             BorderFactory.createEmptyBorder(5, 5, 5, 5)
@@ -461,42 +730,60 @@ public class ModSelectWindow extends JFrame
         GridBagConstraints c = new GridBagConstraints();
         c.fill = GridBagConstraints.BOTH;
 
+        // Right panel
         c.gridx = 1;
         c.gridy = 0;
         c.anchor = GridBagConstraints.WEST;
-        c.weightx = 1;
+        c.weightx = 0.25;
 
-        authors = makeInfoTextAreaField("Author(s)", " ");
-        infoPanel.add(authors, c);
+        modID = makeInfoLabelField("ID", " ");
+        infoPanel.add(modID, c);
+        modID.setVisible(MODDER_MODE);
+        ++c.gridy;
 
-        c.gridy = 1;
-        modVersion = makeInfoLabelField("ModVersion", " ");
+        modVersion = makeInfoLabelField("Version", " ");
         infoPanel.add(modVersion, c);
+        ++c.gridy;
 
-        c.gridy = 2;
         mtsVersion = makeInfoLabelField("ModTheSpire Version", " ");
         infoPanel.add(mtsVersion, c);
+        ++c.gridy;
 
-        c.gridy = 3;
         stsVersion = makeInfoLabelField("Slay the Spire Version", " ");
         infoPanel.add(stsVersion, c);
+        ++c.gridy;
 
-        c.gridy = 4;
-        credits = makeInfoTextAreaField("Additional Credits", " ");
-        infoPanel.add(credits, c);
+        dependencies = makeInfoLabelField("Dependencies", " ");
+        infoPanel.add(dependencies, c);
+        ++c.gridy;
 
-        c.gridy = 5;
         status = makeInfoTextAreaField("Status", " ");
         infoPanel.add(status, c);
 
+        // Left panel
+        c.gridheight = c.gridy + 1;
         c.gridx = 0;
         c.gridy = 0;
-        c.gridheight = 7;
-        c.weightx = 1;
+        c.weightx = 0.75;
         c.weighty = 1;
-        description = makeInfoTextAreaField("Description", " ");
-        infoPanel.add(description, c);
 
+        JPanel leftPanel = new JPanel();
+        leftPanel.setLayout(new BorderLayout());
+
+        description = makeInfoTextAreaField("Description", " ");
+        leftPanel.add(makeTextAreaScrollable(description), BorderLayout.CENTER);
+
+        JPanel leftCredits = new JPanel();
+        leftCredits.setLayout(new BoxLayout(leftCredits, BoxLayout.Y_AXIS));
+
+        authors = makeInfoTextAreaField("Author(s)", " ");
+        leftCredits.add(authors);
+
+        credits = makeInfoTextAreaField("Additional Credits", " ");
+        leftCredits.add(credits);
+
+        leftPanel.add(leftCredits, BorderLayout.SOUTH);
+        infoPanel.add(leftPanel, c);
         panel.add(infoPanel, BorderLayout.CENTER);
 
         return panel;
@@ -507,8 +794,6 @@ public class ModSelectWindow extends JFrame
         JLabel label = new JLabel(value);
 
         TitledBorder border = BorderFactory.createTitledBorder(title);
-        border.setTitleFont(border.getTitleFont().deriveFont(Font.BOLD));
-        label.setFont(label.getFont().deriveFont(Font.PLAIN));
         label.setBorder(BorderFactory.createCompoundBorder(
             border,
             BorderFactory.createEmptyBorder(5, 5, 5, 5)
@@ -522,19 +807,27 @@ public class ModSelectWindow extends JFrame
         JTextArea label = new JTextArea(value);
 
         TitledBorder border = BorderFactory.createTitledBorder(title);
-        border.setTitleFont(border.getTitleFont().deriveFont(Font.BOLD));
         label.setBorder(BorderFactory.createCompoundBorder(
             border,
             BorderFactory.createEmptyBorder(5, 5, 5, 5)
         ));
         label.setEditable(false);
+        label.setFocusable(false);
         label.setAlignmentX(Component.LEFT_ALIGNMENT);
         label.setLineWrap(true);
         label.setWrapStyleWord(true);
         label.setOpaque(false);
-        label.setFont(border.getTitleFont().deriveFont(Font.PLAIN).deriveFont(11.0f));
 
         return label;
+    }
+
+    private JScrollPane makeTextAreaScrollable(JTextArea textArea)
+    {
+        Border border = textArea.getBorder();
+        textArea.setBorder(null);
+        JScrollPane scrollPane = new JScrollPane(textArea);
+        scrollPane.setBorder(border);
+        return scrollPane;
     }
 
     private JPanel makeModBannerPanel()
@@ -563,28 +856,13 @@ public class ModSelectWindow extends JFrame
         panel.setBorder(new MatteBorder(1, 0, 0, 0, Color.darkGray));
 
         // StS version
-        JLabel sts_version = new JLabel("Slay the Spire version: " + Loader.STS_VERSION);
-        if (Loader.STS_BETA) {
+        JLabel sts_version = new JLabel("Slay the Spire version: " + ModTheSpire.STS_VERSION);
+        if (ModTheSpire.STS_BETA) {
             sts_version.setText(sts_version.getText() + " BETA");
         }
+        sts_version.setText(sts_version.getText() + String.format(" (%s)", stsDistributor));
         sts_version.setHorizontalAlignment(SwingConstants.RIGHT);
         panel.add(sts_version, BorderLayout.EAST);
-
-        // Debug checkbox
-        JCheckBox debugCheck = new JCheckBox(DEBUG_OPTION);
-        if (Loader.DEBUG) {
-            debugCheck.setSelected(true);
-        }
-        debugCheck.addActionListener((ActionEvent event) -> {
-            Loader.DEBUG = debugCheck.isSelected();
-            Loader.MTS_CONFIG.setBool("debug", Loader.DEBUG);
-            try {
-                Loader.MTS_CONFIG.save();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        });
-        panel.add(debugCheck, BorderLayout.WEST);
 
         return panel;
     }
@@ -594,7 +872,7 @@ public class ModSelectWindow extends JFrame
         bannerNoticePanel = new JPanel();
         bannerNoticePanel.setLayout(new GridLayout(0, 1));
 
-        if (Loader.STS_BETA) {
+        if (ModTheSpire.STS_BETA) {
             betaWarningBanner = new JLabel();
             betaWarningBanner.setIcon(ICON_ERROR);
             betaWarningBanner.setText("<html>" +
@@ -647,10 +925,10 @@ public class ModSelectWindow extends JFrame
 
     void saveWindowDimensions(Dimension d)
     {
-        Loader.MTS_CONFIG.setInt("width", d.width);
-        Loader.MTS_CONFIG.setInt("height", d.height);
+        ModTheSpire.MTS_CONFIG.setInt("width", d.width);
+        ModTheSpire.MTS_CONFIG.setInt("height", d.height);
         try {
-            Loader.MTS_CONFIG.save();
+            ModTheSpire.MTS_CONFIG.save();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -658,9 +936,9 @@ public class ModSelectWindow extends JFrame
 
     void saveWindowMaximize()
     {
-        Loader.MTS_CONFIG.setBool("maximize", isMaximized);
+        ModTheSpire.MTS_CONFIG.setBool("maximize", isMaximized);
         try {
-            Loader.MTS_CONFIG.save();
+            ModTheSpire.MTS_CONFIG.save();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -669,10 +947,10 @@ public class ModSelectWindow extends JFrame
     void saveWindowLocation()
     {
         Point loc = getLocationOnScreen();
-        Loader.MTS_CONFIG.setInt("x", loc.x);
-        Loader.MTS_CONFIG.setInt("y", loc.y);
+        ModTheSpire.MTS_CONFIG.setInt("x", loc.x);
+        ModTheSpire.MTS_CONFIG.setInt("y", loc.y);
         try {
-            Loader.MTS_CONFIG.save();
+            ModTheSpire.MTS_CONFIG.save();
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -705,6 +983,7 @@ public class ModSelectWindow extends JFrame
         currentModInfo = info;
 
         name.setTitle(info.Name);
+        modID.setText(info.ID);
         authors.setText(String.join(", ", info.Authors));
         if (info.ModVersion != null) {
             modVersion.setText(info.ModVersion.toString());
@@ -722,13 +1001,22 @@ public class ModSelectWindow extends JFrame
             stsVersion.setText(" ");
         }
         description.setText(info.Description);
+        description.setCaretPosition(0);
         credits.setText(info.Credits);
+        refreshDependenciesView(MODDER_MODE);
 
         status.setText(info.statusMsg);
 
         setModUpdateBanner(info);
 
         repaint();
+    }
+
+    private void refreshDependenciesView(boolean modderMode)
+    {
+        if (currentModInfo != null) {
+            dependencies.setText(currentModInfo.getDependenciesRepr(!modderMode));
+        }
     }
 
     synchronized void setModUpdateBanner(ModInfo info)
@@ -757,7 +1045,7 @@ public class ModSelectWindow extends JFrame
             try {
                 // Check for ModTheSpire updates
                 UpdateChecker updateChecker = new GithubUpdateChecker("kiooeht", "ModTheSpire");
-                if (updateChecker.isNewerVersionAvailable(Loader.MTS_VERSION)) {
+                if (updateChecker.isNewerVersionAvailable(ModTheSpire.MTS_VERSION)) {
                     URL latestReleaseURL = updateChecker.getLatestReleaseURL();
                     setMTSUpdateAvailable(latestReleaseURL);
                     return;
@@ -770,7 +1058,7 @@ public class ModSelectWindow extends JFrame
         }).start();
     }
 
-    public void startCheckingForModUpdates(JButton updatesBtn)
+    public void startCheckingForModUpdates(AbstractButton updatesBtn)
     {
         updatesBtn.setIcon(ICON_LOAD);
 

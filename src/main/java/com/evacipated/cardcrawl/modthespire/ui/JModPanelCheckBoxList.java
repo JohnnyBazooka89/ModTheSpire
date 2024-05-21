@@ -2,6 +2,9 @@ package com.evacipated.cardcrawl.modthespire.ui;
 
 import com.evacipated.cardcrawl.modthespire.ModInfo;
 
+import javax.swing.*;
+import javax.swing.border.Border;
+import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.Transferable;
@@ -11,11 +14,9 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
-
-import javax.swing.*;
-import javax.swing.border.Border;
-import javax.swing.border.EmptyBorder;
 
 // From https://stackoverflow.com/a/24777687
 @SuppressWarnings("serial")
@@ -33,8 +34,32 @@ public class JModPanelCheckBoxList extends JList<ModPanel> {
 
         setCellRenderer(new CellRenderer());
 
-        addMouseListener(new MouseAdapter() {
-            public void mouseClicked(MouseEvent e) {
+        MouseAdapter mouseAdapter = new MouseAdapter() {
+            private StatusIconButton hovered = null;
+
+            private void setHovered(StatusIconButton next)
+            {
+                if (hovered != next) {
+                    if (hovered != null) {
+                        hovered.setHovered(false);
+                    }
+                    if (next != null) {
+                        next.setHovered(true);
+                    }
+                    hovered = next;
+
+                    if (hovered != null && hovered.isHovered()) {
+                        JModPanelCheckBoxList.this.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                    } else {
+                        JModPanelCheckBoxList.this.setCursor(null);
+                    }
+                    JModPanelCheckBoxList.this.repaint();
+                }
+            }
+
+            @Override
+            public void mouseClicked(MouseEvent e)
+            {
                 int index = locationToIndex(e.getPoint());
                 if (index != -1) {
                     ModPanel modPanel = getModel().getElementAt(index);
@@ -44,12 +69,41 @@ public class JModPanelCheckBoxList extends JList<ModPanel> {
                         if (modPanel.checkBox.isEnabled()) {
                             modPanel.checkBox.setSelected(!modPanel.checkBox.isSelected());
                             repaint();
+                            parent.saveCurrentModList();
                         }
+                    } else if (hovered != null) {
+                        hovered.doClick();
                     }
                 }
             }
-        });
-        
+
+            @Override
+            public void mouseMoved(MouseEvent e)
+            {
+                int index = locationToIndex(e.getPoint());
+                if (index != -1) {
+                    ModPanel modPanel = getModel().getElementAt(index);
+                    StatusIconButton nextHovered = null;
+                    for (StatusIconButton icon : modPanel.icons) {
+                        int x = icon.getX() + icon.getParent().getX();
+                        if (e.getX() >= x && e.getX() <= x + icon.getWidth()) {
+                            nextHovered = icon;
+                            break;
+                        }
+                    }
+                    setHovered(nextHovered);
+                }
+            }
+
+            @Override
+            public void mouseExited(MouseEvent e)
+            {
+                setHovered(null);
+            }
+        };
+        addMouseListener(mouseAdapter);
+        addMouseMotionListener(mouseAdapter);
+
         // force mods to calc their backgrounds
         publishBoxChecked();
     }
@@ -91,6 +145,16 @@ public class JModPanelCheckBoxList extends JList<ModPanel> {
         return ret;
     }
 
+    public List<String> getCheckedModIDs() {
+        List<String> ret = new ArrayList<>();
+        for (int i = 0; i < getModel().getSize(); ++i) {
+            if (getModel().getElementAt(i).isSelected()) {
+                ret.add(getModel().getElementAt(i).info.ID);
+            }
+        }
+        return ret;
+    }
+
     public void toggleAllMods()
     {
         int on = 0;
@@ -126,6 +190,18 @@ public class JModPanelCheckBoxList extends JList<ModPanel> {
         publishBoxChecked();
     }
 
+    public void enableAllMods(boolean enable)
+    {
+        for (int i=0; i<getModel().getSize(); ++i) {
+            ModPanel modPanel = getModel().getElementAt(i);
+            if (!modPanel.isFilteredOut()) {
+                modPanel.setSelected(enable);
+            }
+        }
+
+        publishBoxChecked();
+    }
+
     public synchronized void setUpdateIcon(ModInfo info, ModSelectWindow.UpdateIconType type)
     {
         for (int i=0; i<getModel().getSize(); ++i) {
@@ -135,6 +211,18 @@ public class JModPanelCheckBoxList extends JList<ModPanel> {
             }
         }
         repaint();
+    }
+
+    @Override
+    public void updateUI()
+    {
+        super.updateUI();
+        for (int i=0; i<getModel().getSize(); ++i) {
+            ModPanel panel = getModel().getElementAt(i);
+            panel.updateUI();
+            SwingUtilities.updateComponentTreeUI(panel);
+            panel.recalcModWarnings(this);
+        }
     }
 
     protected class CellRenderer implements ListCellRenderer<ModPanel> {
@@ -256,6 +344,7 @@ class ListItemTransferHandler extends TransferHandler {
                     ((JModPanelCheckBoxList)target).publishBoxChecked();
                 });
                 listModel.add(idx, values[i]);
+                ((ModPanel) values[i]).recalcModWarnings((JModPanelCheckBoxList) target);
                 target.addSelectionInterval(idx, idx);
             }
             addCount = values.length;

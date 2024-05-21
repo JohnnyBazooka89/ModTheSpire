@@ -1,0 +1,23 @@
+{
+  "ENG": {
+    "ModMenuButton": "Mod Settings",
+    "ModList": "Mod List",
+    "ModConfig": "Config",
+    "Close": "Close"
+  },
+  "ZHS": {
+    "ModMenuButton": "Mod设置",
+    "ModList": "Mod列表",
+    "ModConfig": "设置"
+  },
+  "ZHT": {
+    "ModMenuButton": "Mod設置",
+    "ModList": "Mod列表",
+    "ModConfig": "設置"
+  },
+  "JPN": {
+    "ModMenuButton": "MODの設定",
+    "ModList": "MOD一覧",
+    "ModConfig": "設定"
+  }
+}

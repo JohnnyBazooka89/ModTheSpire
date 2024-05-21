@@ -1,5 +1,53 @@
 ## Changelog ##
 #### dev ####
+* `Loader` class has been renamed to `ModTheSpire`
+* ByRef2
+* SpireMethod
+* Add localization support for MTS strings
+* Track workshop mod playtimes
+* Patch mts-launcher to allow command line arguments to be passed to ModTheSpire
+* Fix lowercase mod names sorted after capitalized mod names
+* Fix crash from compile order not considering interfaces
+* Allow dependencies to specify required version number
+* Add mod ID to UI
+  * Only shown in moddder mode
+* Add dependencies to UI
+* Rearrange info in the UI
+* Fix status message being wiped when rearranging mod order
+* Divide mod list and info panels, allowing for resizing
+* Add settings menu
+* Add UI scale setting
+* Update in-game Mod Settings menu
+  * Make Config button more prominent
+  * Add scrollbar when mod list is long
+* Fix being able to click on non-visble mod entries in the Mod Settings menu
+* FlatLaf UI theme
+* Add theme setting
+* Make mod list clip long mod names instead of scrolling horizontally
+* Add UI to switch between play, out-jar, and package
+  * Only shown in moddder mode
+* Make mod description box scrollable for long text
+* Make Steam icon on mod open the mod's workshop page when clicked
+* Display multiple icons for mods that have local and workshop versions
+* Add button to open logs folder
+* Add button to open StS folder
+* Add ability to edit profile names
+* Add requiredModId to SpireEnum
+* Fix SpirePatch requiredModId not accounting for sideloading
+* Add splash screen while ModTheSpire is loading
+* Add mnemonic shortcut for Play button
+* Add About dialog
+* Fix some mod info text being selectable
+* Remove MTS version from window title
+* Convert profile editing UI into separate window, renamed to Mod Lists
+* Add alias for profile flag: mod-list
+* Convert toggle all mods button to menu items
+* Save mod list changes immediately rather than on pressing Play
+* Display mod dependencies by name when not in Modder Mode
+* Add default value options to SpireConfig get methods
+* Add setting to enable achievements
+* Add setting to unlock A20 for all characters
+* Read and display StS build distributor
 
 #### v3.30.3 ####
 * Fix package information being lost for patched classes (Alchyr)
