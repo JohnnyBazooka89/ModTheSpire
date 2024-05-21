@@ -157,7 +157,7 @@ public class ModsScreen
                 CardCrawlGame.mainMenuScreen.darken();
                 CardCrawlGame.mainMenuScreen.screen = Enum.MODS_LIST;
                 closeButton.show(PatchNotesScreen.TEXT[0]);
-                if (baseModBadges != null && baseModBadges.get(ModTheSpire.MODINFOS[selectedMod].jarURL) != null) {
+                if (baseModBadges != null && baseModBadgeExistsAndModPanelIsNotNull(baseModBadges.get(ModTheSpire.MODINFOS[selectedMod].jarURL))) {
                     showConfigButton();
                 }
             }
